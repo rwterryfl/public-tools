@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: load-generator
+  template:
+    metadata:
+      labels:
+        app: load-generator
+    spec:
+      volumes:
+        - name: load-generator
+          configMap:
+            name: load-generator
+            defaultMode: 420
+      containers:
+        - env:
+            - name: EVENTS_PER_SECOND
+              valueFrom:
+                configMapKeyRef:
+                  name: load-generator
+                  key: eventsPerSecond
+            - name: ITERATIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: load-generator
+                  key: iterations
+            - name: PERCENT_LARGE_BUFFER
+              valueFrom:
+                configMapKeyRef:
+                  name: load-generator
+                  key: percentLargeBuffer
+            - name: SMALL_BUFFER_SIZE_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: load-generator
+                  key: smallBufferSizeBytes
+            - name: LARGE_BUFFER_SIZE_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: load-generator
+                  key: largeBufferSizeBytes
+          name: load-generator
+          command:
+            - /bin/bash
+            - '-c'
+          args:
+            - cp /load-generator.py /tmp/load-generator.py && chmod 777 /tmp/load-generator.py && /tmp/load-generator.py
+          image: registry.redhat.io/rhel9/python-39
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: load-generator
+              mountPath: /load-generator.py
+              subPath: load-generator.py
+          resources: {}
+          terminationMessagePolicy: File
+          terminationMessagePath: /dev/termination-log
