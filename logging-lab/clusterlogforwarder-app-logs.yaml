@@ -1,0 +1,35 @@
+﻿apiVersion: observability.openshift.io/v1
+kind: ClusterLogForwarder
+metadata:
+  name: app-logs
+  namespace: openshift-logging
+spec:
+  collector:
+    nodeSelector:
+      kubernetes.io/os: linux
+    resources:
+      limits: {}
+      requests: {}
+  inputs:
+    - application:
+        includes:
+          - namespace: load-generator-1
+      name: load-generator-1
+      type: application
+  managementState: Managed
+  outputs:
+    - http:
+        method: POST
+        tuning:
+          deliveryMode: AtLeastOnce
+        url: 'http://vector-aggregator-app.vector-aggregator.svc.cluster.local:8080'
+      name: http-forwarder
+      type: http
+  pipelines:
+    - inputRefs:
+        - load-generator-1
+      name: apps
+      outputRefs:
+        - http-forwarder
+  serviceAccount:
+    name: app-logs

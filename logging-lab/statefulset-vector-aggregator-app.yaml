@@ -1,0 +1,81 @@
+﻿kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: vector-aggregator-app
+  namespace: vector-aggregator
+  labels:
+    app.kubernetes.io/component: Aggregator
+    app.kubernetes.io/instance: vector-aggregator-app
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vector
+    app.kubernetes.io/version: 0.43.0-distroless-libc
+    helm.sh/chart: vector-0.38.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: Aggregator
+      app.kubernetes.io/instance: vector-aggregator-app
+      app.kubernetes.io/name: vector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: Aggregator
+        app.kubernetes.io/instance: vector-aggregator-app
+        app.kubernetes.io/name: vector
+        vector.dev/exclude: 'true'
+      annotations:
+        checksum/config: 8fb91bee99360d2692e66fdc6341456745a5ffabd44b653ec2b2fd363f50e032
+    spec:
+      restartPolicy: Always
+      serviceAccountName: vector-aggregator-app
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 60
+      securityContext: {}
+      containers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: vector
+          env:
+            - name: VECTOR_LOG
+              value: info
+          ports:
+            - name: prometheus-outp
+              containerPort: 24231
+              protocol: TCP
+            - name: http-server
+              containerPort: 8080
+              protocol: TCP
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: data
+              mountPath: /vector-data-dir
+            - name: config
+              readOnly: true
+              mountPath: /etc/vector/
+          terminationMessagePolicy: File
+          image: 'timberio/vector:0.43.0-distroless-libc'
+          args:
+            - '--config-dir'
+            - /etc/vector/
+      serviceAccount: vector-aggregator-app
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: vector-aggregator-app
+            defaultMode: 420
+      dnsPolicy: ClusterFirst
+  serviceName: vector-aggregator-app-headless
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  revisionHistoryLimit: 10
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
