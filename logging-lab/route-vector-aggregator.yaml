@@ -1,0 +1,62 @@
+﻿kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: vector-aggregator
+  namespace: vector-aggregator
+  uid: 346f1251-5aae-48db-b2f2-565155c782a7
+  resourceVersion: '38495'
+  generation: 1
+  creationTimestamp: '2026-09-30T12:57:08Z'
+  annotations:
+    openshift.io/host.generated: 'true'
+  managedFields:
+    - manager: Mozilla
+      operation: Update
+      apiVersion: route.openshift.io/v1
+      time: '2026-09-30T12:57:08Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          'f:port':
+            .: {}
+            'f:targetPort': {}
+          'f:tls':
+            .: {}
+            'f:insecureEdgeTerminationPolicy': {}
+            'f:termination': {}
+          'f:to':
+            'f:kind': {}
+            'f:name': {}
+            'f:weight': {}
+          'f:wildcardPolicy': {}
+    - manager: openshift-router
+      operation: Update
+      apiVersion: route.openshift.io/v1
+      time: '2026-09-30T12:57:08Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:status':
+          'f:ingress': {}
+      subresource: status
+spec:
+  host: vector-aggregator-vector-aggregator.apps-crc.testing
+  to:
+    kind: Service
+    name: vector
+    weight: 100
+  port:
+    targetPort: http-server
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+status:
+  ingress:
+    - host: vector-aggregator-vector-aggregator.apps-crc.testing
+      routerName: default
+      conditions:
+        - type: Admitted
+          status: 'True'
+          lastTransitionTime: '2026-09-30T12:57:08Z'
+      wildcardPolicy: None
+      routerCanonicalHostname: router-default.apps-crc.testing

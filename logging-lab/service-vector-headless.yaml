@@ -1,0 +1,83 @@
+﻿kind: Service
+apiVersion: v1
+metadata:
+  name: vector-headless
+  namespace: vector-aggregator
+  uid: d92a0fe2-3ea1-4ee4-8068-a566534ac532
+  resourceVersion: '34907'
+  creationTimestamp: '2026-09-30T12:31:09Z'
+  labels:
+    app.kubernetes.io/component: Stateless-Aggregator
+    app.kubernetes.io/instance: vector
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vector
+    app.kubernetes.io/version: 0.45.0-distroless-libc
+    helm.sh/chart: vector-0.41.0
+  annotations:
+    meta.helm.sh/release-name: vector
+    meta.helm.sh/release-namespace: vector-aggregator
+  managedFields:
+    - manager: helm
+      operation: Update
+      apiVersion: v1
+      time: '2026-09-30T12:31:09Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:metadata':
+          'f:annotations':
+            .: {}
+            'f:meta.helm.sh/release-name': {}
+            'f:meta.helm.sh/release-namespace': {}
+          'f:labels':
+            .: {}
+            'f:app.kubernetes.io/component': {}
+            'f:app.kubernetes.io/instance': {}
+            'f:app.kubernetes.io/managed-by': {}
+            'f:app.kubernetes.io/name': {}
+            'f:app.kubernetes.io/version': {}
+            'f:helm.sh/chart': {}
+        'f:spec':
+          'f:clusterIP': {}
+          'f:internalTrafficPolicy': {}
+          'f:ports':
+            .: {}
+            'k:{"port":8080,"protocol":"TCP"}':
+              .: {}
+              'f:name': {}
+              'f:port': {}
+              'f:protocol': {}
+              'f:targetPort': {}
+            'k:{"port":24231,"protocol":"TCP"}':
+              .: {}
+              'f:name': {}
+              'f:port': {}
+              'f:protocol': {}
+              'f:targetPort': {}
+          'f:selector': {}
+          'f:sessionAffinity': {}
+          'f:type': {}
+spec:
+  clusterIP: None
+  ipFamilies:
+    - IPv4
+  ports:
+    - name: prometheus-output
+      protocol: TCP
+      port: 24231
+      targetPort: 24231
+    - name: http-server
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  internalTrafficPolicy: Cluster
+  clusterIPs:
+    - None
+  type: ClusterIP
+  ipFamilyPolicy: SingleStack
+  sessionAffinity: None
+  selector:
+    app.kubernetes.io/component: Stateless-Aggregator
+    app.kubernetes.io/instance: vector
+    app.kubernetes.io/name: vector
+status:
+  loadBalancer: {}

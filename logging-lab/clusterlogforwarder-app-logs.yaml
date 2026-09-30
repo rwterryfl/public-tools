@@ -1,8 +1,89 @@
 ﻿apiVersion: observability.openshift.io/v1
 kind: ClusterLogForwarder
 metadata:
+  creationTimestamp: '2026-09-30T12:31:51Z'
+  generation: 3
+  managedFields:
+    - apiVersion: observability.openshift.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          .: {}
+          'f:collector':
+            .: {}
+            'f:nodeSelector':
+              .: {}
+              'f:kubernetes.io/os': {}
+            'f:resources':
+              .: {}
+              'f:limits': {}
+              'f:requests': {}
+          'f:inputs':
+            .: {}
+            'k:{"name":"load-generator"}':
+              .: {}
+              'f:application':
+                .: {}
+                'f:includes': {}
+              'f:name': {}
+              'f:type': {}
+          'f:managementState': {}
+          'f:outputs':
+            .: {}
+            'k:{"name":"http-forwarder"}':
+              .: {}
+              'f:http':
+                .: {}
+                'f:method': {}
+                'f:tuning':
+                  .: {}
+                  'f:deliveryMode': {}
+              'f:name': {}
+              'f:type': {}
+          'f:pipelines':
+            .: {}
+            'k:{"name":"apps"}':
+              .: {}
+              'f:inputRefs': {}
+              'f:name': {}
+              'f:outputRefs': {}
+          'f:serviceAccount':
+            .: {}
+            'f:name': {}
+      manager: OpenAPI-Generator
+      operation: Update
+      time: '2026-09-30T12:31:51Z'
+    - apiVersion: observability.openshift.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:status':
+          .: {}
+          'f:conditions': {}
+          'f:inputConditions': {}
+          'f:outputConditions': {}
+          'f:pipelineConditions': {}
+      manager: cluster-logging-operator
+      operation: Update
+      subresource: status
+      time: '2026-09-30T12:31:57Z'
+    - apiVersion: observability.openshift.io/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          'f:outputs':
+            'k:{"name":"http-forwarder"}':
+              'f:http':
+                'f:url': {}
+              'f:tls':
+                .: {}
+                'f:insecureSkipVerify': {}
+      manager: Mozilla
+      operation: Update
+      time: '2026-09-30T13:02:12Z'
   name: app-logs
   namespace: openshift-logging
+  resourceVersion: '38996'
+  uid: b347c0e8-18cb-4e2a-9ca8-ca00554428d3
 spec:
   collector:
     nodeSelector:
@@ -13,8 +94,8 @@ spec:
   inputs:
     - application:
         includes:
-          - namespace: load-generator-1
-      name: load-generator-1
+          - namespace: load-generator
+      name: load-generator
       type: application
   managementState: Managed
   outputs:
@@ -22,14 +103,51 @@ spec:
         method: POST
         tuning:
           deliveryMode: AtLeastOnce
-        url: 'http://vector-aggregator-app.vector-aggregator.svc.cluster.local:8080'
+        url: 'https://vector-aggregator-vector-aggregator.apps-crc.testing'
       name: http-forwarder
+      tls:
+        insecureSkipVerify: true
       type: http
   pipelines:
     - inputRefs:
-        - load-generator-1
+        - load-generator
       name: apps
       outputRefs:
         - http-forwarder
   serviceAccount:
     name: app-logs
+status:
+  conditions:
+    - lastTransitionTime: '2026-09-30T12:31:51Z'
+      message: 'permitted to collect log types: [application]'
+      reason: ClusterRolesExist
+      status: 'True'
+      type: observability.openshift.io/Authorized
+    - lastTransitionTime: '2026-09-30T12:31:51Z'
+      message: ''
+      reason: ValidationSuccess
+      status: 'True'
+      type: observability.openshift.io/Valid
+    - lastTransitionTime: '2026-09-30T12:31:57Z'
+      message: ''
+      reason: ReconciliationComplete
+      status: 'True'
+      type: Ready
+  inputConditions:
+    - lastTransitionTime: '2026-09-30T12:31:51Z'
+      message: input "load-generator" is valid
+      reason: ValidationSuccess
+      status: 'True'
+      type: observability.openshift.io/ValidInput-load-generator
+  outputConditions:
+    - lastTransitionTime: '2026-09-30T12:31:51Z'
+      message: output "http-forwarder" is valid
+      reason: ValidationSuccess
+      status: 'True'
+      type: observability.openshift.io/ValidOutput-http-forwarder
+  pipelineConditions:
+    - lastTransitionTime: '2026-09-30T12:31:51Z'
+      message: pipeline "apps" is valid
+      reason: ValidationSuccess
+      status: 'True'
+      type: observability.openshift.io/ValidPipeline-apps

@@ -1,0 +1,51 @@
+﻿apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  creationTimestamp: '2026-09-30T12:31:10Z'
+  generation: 2
+  labels:
+    app: vector-aggregator
+  managedFields:
+    - apiVersion: monitoring.coreos.com/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:metadata':
+          'f:labels':
+            .: {}
+            'f:app': {}
+        'f:spec':
+          .: {}
+          'f:endpoints': {}
+          'f:jobLabel': {}
+          'f:namespaceSelector':
+            .: {}
+            'f:matchNames': {}
+      manager: OpenAPI-Generator
+      operation: Update
+      time: '2026-09-30T12:31:10Z'
+    - apiVersion: monitoring.coreos.com/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:spec':
+          'f:selector': {}
+      manager: Mozilla
+      operation: Update
+      time: '2026-09-30T12:53:18Z'
+  name: vector-aggregator
+  namespace: vector-aggregator
+  resourceVersion: '38147'
+  uid: e0b90bfe-a27f-49a1-84dc-68808d366085
+spec:
+  endpoints:
+    - path: /metrics
+      port: prometheus-output
+      scheme: http
+  jobLabel: monitor-vector-aggregator
+  namespaceSelector:
+    matchNames:
+      - vector-aggregator
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: Stateless-Aggregator
+      app.kubernetes.io/instance: vector
+      app.kubernetes.io/name: vector

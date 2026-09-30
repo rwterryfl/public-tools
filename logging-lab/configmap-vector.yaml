@@ -1,0 +1,83 @@
+﻿kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: vector
+  namespace: vector-aggregator
+  uid: 238ef38b-14ee-46c1-ab8e-57c81f8f435b
+  resourceVersion: '34904'
+  creationTimestamp: '2026-09-30T12:31:09Z'
+  labels:
+    app.kubernetes.io/component: Stateless-Aggregator
+    app.kubernetes.io/instance: vector
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: vector
+    app.kubernetes.io/version: 0.45.0-distroless-libc
+    helm.sh/chart: vector-0.41.0
+  annotations:
+    meta.helm.sh/release-name: vector
+    meta.helm.sh/release-namespace: vector-aggregator
+  managedFields:
+    - manager: helm
+      operation: Update
+      apiVersion: v1
+      time: '2026-09-30T12:31:09Z'
+      fieldsType: FieldsV1
+      fieldsV1:
+        'f:data':
+          .: {}
+          'f:vector.yaml': {}
+        'f:metadata':
+          'f:annotations':
+            .: {}
+            'f:meta.helm.sh/release-name': {}
+            'f:meta.helm.sh/release-namespace': {}
+          'f:labels':
+            .: {}
+            'f:app.kubernetes.io/component': {}
+            'f:app.kubernetes.io/instance': {}
+            'f:app.kubernetes.io/managed-by': {}
+            'f:app.kubernetes.io/name': {}
+            'f:app.kubernetes.io/version': {}
+            'f:helm.sh/chart': {}
+data:
+  vector.yaml: |
+    data_dir: /vector-data-dir
+    sinks:
+      blackhole:
+        inputs:
+        - json_parser_message
+        type: blackhole
+      prometheus_output:
+        address: '[::]:24231'
+        default_namespace: vector-aggregator
+        flush_period_secs: 3600
+        inputs:
+        - internal_metrics
+        - pod_log_counter
+        type: prometheus_exporter
+    sources:
+      http_server:
+        address: 0.0.0.0:8080
+        type: http_server
+      internal_metrics:
+        type: internal_metrics
+    transforms:
+      json_parser_message:
+        inputs:
+        - http_server
+        source: |
+          . = parse_json!(string!(.message))
+        type: remap
+      pod_log_counter:
+        inputs:
+        - json_parser_message
+        metrics:
+        - field: message
+          name: pod_log_counter
+          namespace: aggregator
+          tags:
+            container_name: '{{ kubernetes.container_name }}'
+            namespace_name: '{{ kubernetes.namespace_name }}'
+            pod_name: '{{ kubernetes.pod_name }}'
+          type: counter
+        type: log_to_metric
