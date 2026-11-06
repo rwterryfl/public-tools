@@ -1,0 +1,283 @@
+# All-in-one manifest for the Vector log line counter agent.
+# Derived from playbooks/container_log_counter_rh_image.yaml.
+#
+# Placeholders (substitute before applying, see README.md):
+#   ${NAMESPACE}      namespace whose container log lines are counted
+#                     (all pods and containers, on every node)
+#   ${IMAGE_NAME}     Vector image used by the openshift-logging collector pods
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: ${NAMESPACE}-line-counter-vector
+  namespace: openshift-logging
+  labels:
+    app.kubernetes.io/component: Agent
+    app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+    app.kubernetes.io/name: vector
+data:
+  run-vector.sh: |
+    #!/bin/bash
+
+    set -uo pipefail
+
+    echo "Starting Vector process..."
+    exec /usr/bin/vector --config-yaml /etc/vector/vector.yaml
+
+  vector.yaml: |
+    data_dir: /vector-data-dir
+    sinks:
+      blackhole:
+        type: file
+        inputs:
+          - container_log_lines
+        path: /dev/null
+        encoding:
+          codec: json
+      prometheus_output:
+        address: '[::]:24231'
+        default_namespace: line-counter
+        flush_period_secs: 3600
+        inputs:
+        - internal_metrics
+        - liveness_counter
+        type: prometheus_exporter
+    transforms:
+      # Keep only lines that contain "/health/liveness"
+      liveness_filter:
+        type: filter
+        inputs:
+          - container_log_lines
+        condition:
+          type: vrl
+          source: |
+            contains(string!(.message), "/health/liveness")
+      # Mark each matching line with a value of 1
+      liveness_counter_field:
+        type: remap
+        inputs:
+          - liveness_filter
+        source: |
+          .health_liveness_hit = 1
+      # Add the value to a counter
+      liveness_counter:
+        type: log_to_metric
+        inputs:
+          - liveness_counter_field
+        metrics:
+          - type: counter
+            kind: incremental
+            field: health_liveness_hit
+            namespace: line_counter
+            name: health_liveness_lines_total
+            increment_by_value: true
+            # "pod_name", not "pod": Prometheus sets "pod" to the agent pod
+            tags:
+              pod_name: "{{ kubernetes.pod_name }}"
+    sources:
+      container_log_lines:
+        auto_partial_merge: true
+        glob_minimum_cooldown_ms: 15000
+        include_paths_glob_patterns:
+        - "/var/log/pods/${NAMESPACE}_*/*/*.log"
+        max_read_bytes: 3145728
+        pod_annotation_fields:
+          pod_annotations: kubernetes.annotations
+          pod_labels: kubernetes.labels
+          pod_namespace: kubernetes.namespace_name
+          pod_node_name: hostname
+          pod_uid: kubernetes.pod_id
+        read_from: end
+        rotate_wait_secs: 5
+        type: kubernetes_logs
+      internal_metrics:
+        type: internal_metrics
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: ${NAMESPACE}-line-counter-vector
+  namespace: openshift-logging
+  labels:
+    app.kubernetes.io/component: Agent
+    app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+    app.kubernetes.io/name: vector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: Agent
+      app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+      app.kubernetes.io/name: vector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: Agent
+        app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+        app.kubernetes.io/name: vector
+        vector.dev/exclude: 'true'
+    spec:
+      tolerations:
+        - operator: Exists
+      restartPolicy: Always
+      serviceAccountName: app-logs
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: vector
+          env:
+            - name: VECTOR_LOG
+              value: info
+            - name: VECTOR_SELF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: VECTOR_SELF_POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: VECTOR_SELF_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: PROCFS_ROOT
+              value: /host/proc
+            - name: SYSFS_ROOT
+              value: /host/sys
+          securityContext:
+            capabilities:
+              drop:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+                - FSETID
+                - KILL
+                - NET_BIND_SERVICE
+                - SETGID
+                - SETPCAP
+                - SETUID
+            seLinuxOptions:
+              type: spc_t
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: prometheus-outp
+              containerPort: 24231
+              protocol: TCP
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: data
+              mountPath: /vector-data-dir
+            - name: config
+              readOnly: true
+              mountPath: /etc/vector/
+            - name: entrypoint
+              readOnly: true
+              mountPath: /usr/bin/run-vector.sh
+              subPath: run-vector.sh
+            - name: var-log
+              readOnly: true
+              mountPath: /var/log/
+            - name: var-lib
+              readOnly: true
+              mountPath: /var/lib
+            - name: procfs
+              readOnly: true
+              mountPath: /host/proc
+            - name: sysfs
+              readOnly: true
+              mountPath: /host/sys
+          terminationMessagePolicy: File
+          image: ${IMAGE_NAME}
+          command:
+            - sh
+          args:
+            - /usr/bin/run-vector.sh
+      serviceAccount: app-logs
+      volumes:
+        - name: config
+          configMap:
+            name: ${NAMESPACE}-line-counter-vector
+            defaultMode: 420
+        - name: entrypoint
+          configMap:
+            name: ${NAMESPACE}-line-counter-vector
+            defaultMode: 420
+        - name: data
+          emptyDir: {}
+        - name: var-log
+          hostPath:
+            path: /var/log/
+            type: ''
+        - name: var-lib
+          hostPath:
+            path: /var/lib/
+            type: ''
+        - name: procfs
+          hostPath:
+            path: /proc
+            type: ''
+        - name: sysfs
+          hostPath:
+            path: /sys
+            type: ''
+      dnsPolicy: ClusterFirst
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  revisionHistoryLimit: 10
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: ${NAMESPACE}-line-counter
+  namespace: openshift-logging
+  labels:
+    app.kubernetes.io/component: Agent
+    app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+    app.kubernetes.io/name: vector
+spec:
+  ports:
+    - name: prometheus-output
+      protocol: TCP
+      port: 24231
+      targetPort: 24231
+  internalTrafficPolicy: Cluster
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: Agent
+    app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+    app.kubernetes.io/name: vector
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ${NAMESPACE}-line-counter
+  namespace: openshift-logging
+  labels:
+    app: log-line-counter
+spec:
+  jobLabel: monitor-log-line-counter
+  namespaceSelector:
+    matchNames:
+      - openshift-logging
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: Agent
+      app.kubernetes.io/instance: ${NAMESPACE}-line-counter
+      app.kubernetes.io/name: vector
+  endpoints:
+    - port: prometheus-output
+      path: /metrics
+      scheme: http

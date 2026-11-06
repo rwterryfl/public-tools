@@ -1,0 +1,323 @@
+---
+- name: Deploy acm lab stack
+  hosts: localhost
+
+  vars:
+    state: present
+    pod_namespace: ""
+    pod_name: ""
+    container_name: ""
+    host_name: ""
+    service_account_name: ""
+    image_name: ""
+
+  tasks:
+
+    - name: Get compute node for container
+      kubernetes.core.k8s_info:
+        validate_certs: false
+        kind: Pod
+        namespace: "{{ pod_namespace }}"
+        name: "{{ pod_name }}"
+      register: pod_to_monitor
+      when: "state == 'present'"
+
+    # If the pod is not found and state == 'present', exit the playbook
+    - name: Check if pod exists
+      ansible.builtin.fail:
+        msg: "Pod {{ pod_name }} not found in namespace {{ pod_namespace }}"
+      when: "state == 'present' and pod_to_monitor.resources | length == 0"
+
+    - name: Get host name for pod
+      ansible.builtin.set_fact:
+        host_name: "{{ pod_to_monitor.resources[0].spec.nodeName }}"
+      when: "state == 'present'"
+
+    - name: Print host name
+      ansible.builtin.debug:
+        var: host_name
+      when: "state == 'present'"
+
+    - name: Get available collector pods
+      kubernetes.core.k8s_info:
+        validate_certs: false
+        kind: Pod
+        namespace: openshift-logging
+        label_selectors:
+          - app.kubernetes.io/component=collector
+      register: collector_pods
+      when: "state == 'present'"
+
+    - name: Get serviceAccount from collector pod
+      ansible.builtin.set_fact:
+        service_account_name: "{{ collector_pods.resources[0].spec.serviceAccount }}"
+      when: "state == 'present'"
+
+    - name: Get image name from collector pod
+      ansible.builtin.set_fact:
+        image_name: "{{ collector_pods.resources[0].spec.containers[0].image }}"
+      when: "state == 'present'"
+
+    - name: Deploy configmap for Vector log line counter
+      kubernetes.core.k8s:
+        validate_certs: false
+        state: "{{ state }}"
+        definition:
+          kind: ConfigMap
+          apiVersion: v1
+          metadata:
+            name: "{{ pod_name }}-line-counter-vector"
+            namespace: openshift-logging
+            labels:
+              app.kubernetes.io/component: Agent
+              app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+              app.kubernetes.io/name: vector
+          data:
+            run-vector.sh: |
+              #!/bin/bash
+
+              set -uo pipefail
+
+              echo "Starting Vector process..."
+              exec /usr/bin/vector --config-yaml /etc/vector/vector.yaml
+
+            vector.yaml: |
+              data_dir: /vector-data-dir
+              sinks:
+                blackhole:
+                  type: file
+                  inputs:
+                    - container_log_lines
+                  path: /dev/null
+                  encoding:
+                    codec: json
+                prometheus_output:
+                  address: '[::]:24231'
+                  default_namespace: line-counter
+                  flush_period_secs: 3600
+                  inputs:
+                  - internal_metrics
+                  type: prometheus_exporter
+              sources:
+                container_log_lines:
+                  auto_partial_merge: true
+                  glob_minimum_cooldown_ms: 15000
+                  include_paths_glob_patterns:
+                  - "/var/log/pods/{{ pod_namespace }}_{{ pod_name }}*/load-generator/*.log"
+                  max_read_bytes: 3145728
+                  pod_annotation_fields:
+                    pod_annotations: kubernetes.annotations
+                    pod_labels: kubernetes.labels
+                    pod_namespace: kubernetes.namespace_name
+                    pod_node_name: hostname
+                    pod_uid: kubernetes.pod_id
+                  read_from: end
+                  rotate_wait_secs: 5
+                  type: kubernetes_logs
+                internal_metrics:
+                  type: internal_metrics
+
+    - name: Deploy DaemonSet for Vector log line counter
+      kubernetes.core.k8s:
+        validate_certs: false
+        state: "{{ state }}"
+        definition:
+          kind: DaemonSet
+          apiVersion: apps/v1
+          metadata:
+            name: "{{ pod_name }}-line-counter-vector"
+            namespace: openshift-logging
+            labels:
+              app.kubernetes.io/component: Agent
+              app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+              app.kubernetes.io/name: vector
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/component: Agent
+                app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+                app.kubernetes.io/name: vector
+            template:
+              metadata:
+                creationTimestamp: null
+                labels:
+                  app.kubernetes.io/component: Agent
+                  app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+                  app.kubernetes.io/name: vector
+                  vector.dev/exclude: 'true'
+              spec:
+                nodeSelector:
+                  kubernetes.io/hostname: "{{ host_name }}"
+                restartPolicy: Always
+                serviceAccountName: app-logs
+                schedulerName: default-scheduler
+                terminationGracePeriodSeconds: 60
+                securityContext:
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - resources: {}
+                    terminationMessagePath: /dev/termination-log
+                    name: vector
+                    env:
+                      - name: VECTOR_LOG
+                        value: info
+                      - name: VECTOR_SELF_NODE_NAME
+                        valueFrom:
+                          fieldRef:
+                            apiVersion: v1
+                            fieldPath: spec.nodeName
+                      - name: VECTOR_SELF_POD_NAME
+                        valueFrom:
+                          fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.name
+                      - name: VECTOR_SELF_POD_NAMESPACE
+                        valueFrom:
+                          fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.namespace
+                      - name: PROCFS_ROOT
+                        value: /host/proc
+                      - name: SYSFS_ROOT
+                        value: /host/sys
+                    securityContext:
+                      capabilities:
+                        drop:
+                          - CHOWN
+                          - DAC_OVERRIDE
+                          - FOWNER
+                          - FSETID
+                          - KILL
+                          - NET_BIND_SERVICE
+                          - SETGID
+                          - SETPCAP
+                          - SETUID
+                      seLinuxOptions:
+                        type: spc_t
+                      readOnlyRootFilesystem: true
+                      allowPrivilegeEscalation: false
+                      seccompProfile:
+                        type: RuntimeDefault
+                    ports:
+                      - name: prometheus-outp
+                        containerPort: 24231
+                        protocol: TCP
+                    imagePullPolicy: IfNotPresent
+                    volumeMounts:
+                      - name: data
+                        mountPath: /vector-data-dir
+                      - name: config
+                        readOnly: true
+                        mountPath: /etc/vector/
+                      - name: entrypoint
+                        readOnly: true
+                        mountPath: /usr/bin/run-vector.sh
+                        subPath: run-vector.sh
+                      - name: var-log
+                        readOnly: true
+                        mountPath: /var/log/
+                      - name: var-lib
+                        readOnly: true
+                        mountPath: /var/lib
+                      - name: procfs
+                        readOnly: true
+                        mountPath: /host/proc
+                      - name: sysfs
+                        readOnly: true
+                        mountPath: /host/sys
+                    terminationMessagePolicy: File
+                    image: "{{ image_name }}"
+                    command:
+                      - sh
+                    args:
+                      - /usr/bin/run-vector.sh
+                serviceAccount: app-logs
+                volumes:
+                  - name: config
+                    configMap:
+                      name: "{{ pod_name }}-line-counter-vector"
+                      defaultMode: 420
+                  - name: entrypoint
+                    configMap:
+                      name: "{{ pod_name }}-line-counter-vector"
+                      defaultMode: 420
+                  - name: data
+                    emptyDir: {}
+                  - name: var-log
+                    hostPath:
+                      path: /var/log/
+                      type: ''
+                  - name: var-lib
+                    hostPath:
+                      path: /var/lib/
+                      type: ''
+                  - name: procfs
+                    hostPath:
+                      path: /proc
+                      type: ''
+                  - name: sysfs
+                    hostPath:
+                      path: /sys
+                      type: ''
+                dnsPolicy: ClusterFirst
+            updateStrategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxUnavailable: 1
+                maxSurge: 0
+            revisionHistoryLimit: 10
+
+    - name: Install service for Vector log line counter
+      kubernetes.core.k8s:
+        validate_certs: false
+        state: "{{ state }}"
+        definition:
+          kind: Service
+          apiVersion: v1
+          metadata:
+            name: "{{ pod_name }}-line-counter"
+            namespace: openshift-logging
+            labels:
+              app.kubernetes.io/component: Agent
+              app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+              app.kubernetes.io/name: vector
+          spec:
+            ports:
+              - name: prometheus-output
+                protocol: TCP
+                port: 24231
+                targetPort: 24231
+            internalTrafficPolicy: Cluster
+            type: ClusterIP
+            selector:
+              app.kubernetes.io/component: Agent
+              app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+              app.kubernetes.io/name: vector
+
+    - name: Install ServiceMonitor for Vector log line counter
+      kubernetes.core.k8s:
+        validate_certs: false
+        state: "{{ state }}"
+        definition:
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: "{{ pod_name }}-line-counter"
+            namespace: openshift-logging
+            labels:
+              app: log-line-counter
+          spec:
+            jobLabel: monitor-log-line-counter
+            namespaceSelector:
+              matchNames:
+                - openshift-logging
+            selector:
+              matchLabels:
+                app.kubernetes.io/component: Agent
+                app.kubernetes.io/instance: "{{ pod_name }}-line-counter"
+                app.kubernetes.io/name: vector
+            endpoints:
+              - port: prometheus-output
+                path: /metrics
+                scheme: http

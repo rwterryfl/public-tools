@@ -1,0 +1,43 @@
+
+data_dir: /var/lib/vector
+
+sources:
+  kubernetes_logs:
+    type: kubernetes_logs
+    self_node_name: "${VECTOR_SELF_NODE_NAME}"
+
+transforms:
+  liveness_filter:
+    type: filter
+    inputs:
+      - kubernetes_logs
+    condition:
+      type: vrl
+      source: |
+        .kubernetes.pod_namespace == "my-namespace" &&
+        contains(string!(.message), "/health/liveness")
+
+  readiness_counter_field:
+    type: remap
+    inputs:
+      - liveness_filter
+    source: |
+      .health_liveness_hit = 1
+
+  liveness_counter:
+    type: log_to_metric
+    inputs:
+      - readiness_counter_field
+    metrics:
+      - type: counter
+        kind: incremental
+        field: health_liveness_hit
+        name: health_liveness_lines_total
+        increment_by_value: true
+
+sinks:
+  prometheus_exporter:
+    type: prometheus_exporter
+    inputs:
+      - liveness_counter
+    address: "0.0.0.0:9598"
